@@ -49,7 +49,11 @@ test:
     - test -f $PREFIX/compute-sanitizer/compute-sanitizer                           # [linux]
     - if not exist %LIBRARY_PREFIX%\compute-sanitizer\compute-sanitizer.exe exit 1  # [win]
     - if not exist %PREFIX%\Scripts\compute-sanitizer.bat exit 1                    # [win]
-    - {{ exists }} compute-sanitizer
+    # This test fails on aarch64. Using `strace which compute-sanitizer` confirms the file is found, but
+    # which still writes "no compute-sanitizer" to stderr. Maybe the `which` in our docker container isn't working correctly, because
+    # `compute-sanitizer --version` executes correctly, and there's no system CUDA installation in the container.
+    # renaming compute-sanitizer to 14 characters or less also seems to fix it.
+    - {{ exists }} compute-sanitizer                                                # [not (linux and aarch64)]
     - compute-sanitizer --version                                                   # [build_platform == target_platform]
 
 about:
