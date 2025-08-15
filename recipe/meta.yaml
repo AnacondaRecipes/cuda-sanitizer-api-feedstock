@@ -27,6 +27,10 @@ build:
   missing_dso_whitelist:
     - '$RPATH/libInterceptorInjectionTarget.so'  # [linux]
     - '$RPATH/InterceptorInjectionTarget.dll'    # [win]
+  overlinking_ignore_patterns:  # [linux and aarch64]
+    - "targets/sbsa-linux/lib/{{ name }}*.so*"  # [linux and aarch64]
+    - "targets/sbsa-linux/lib/stubs/{{ name }}*.so*"  # [linux and aarch64]
+    - "lib/{{ name }}*.so*"  # [linux and aarch64]
 
 requirements:
   build:
