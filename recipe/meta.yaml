@@ -1,4 +1,5 @@
 {% set name = "cuda-sanitizer-api" %}
+{% set libname = "libsanitizer" %}
 {% set version = "12.8.93" %}
 {% set cuda_version = "12.8" %}
 {% set platform = "linux-x86_64" %}  # [linux64]
@@ -27,10 +28,23 @@ build:
   missing_dso_whitelist:
     - '$RPATH/libInterceptorInjectionTarget.so'  # [linux]
     - '$RPATH/InterceptorInjectionTarget.dll'    # [win]
+  # Repacked binaries on linux aarch64 have flag DT_TLSDESC (GNU_HASH),
+  # which is not supported by LIEF and can raise ValueError during
+  # overlinking checks. Use specific patterns from files section.
   overlinking_ignore_patterns:  # [linux and aarch64]
-    - "targets/sbsa-linux/lib/{{ name }}*.so*"  # [linux and aarch64]
-    - "targets/sbsa-linux/lib/stubs/{{ name }}*.so*"  # [linux and aarch64]
-    - "lib/{{ name }}*.so*"  # [linux and aarch64]
+    - "targets/sbsa-linux/lib/{{ libname }}*.so*"  # [linux and aarch64]
+    - "targets/sbsa-linux/compute-sanitizer/libInterceptor*"  # [linux and aarch64]
+    - "targets/sbsa-linux/compute-sanitizer/libTreeLauncher*"  # [linux and aarch64]
+    - "targets/sbsa-linux/compute-sanitizer/TreeLauncher*"  # [linux and aarch64]
+    - "targets/sbsa-linux/compute-sanitizer/compute-sanitizer"  # [linux and aarch64]
+    - "targets/sbsa-linux/compute-sanitizer/stubs/{{ libname }}*.so*"  # [linux and aarch64]
+    - "targets/sbsa-linux/compute-sanitizer/stubs/libInterceptor*"  # [linux and aarch64]
+    - "targets/sbsa-linux/compute-sanitizer/stubs/libTreeLauncher*"  # [linux and aarch64]
+    - "compute-sanitizer/{{ libname }}*.so*"  # [linux and aarch64]
+    - "compute-sanitizer/libInterceptor*"  # [linux and aarch64]
+    - "compute-sanitizer/libTreeLauncher*"  # [linux and aarch64]
+    - "compute-sanitizer/TreeLauncher*"  # [linux and aarch64]
+    - "compute-sanitizer/compute-sanitizer"  # [linux and aarch64]
 
 requirements:
   build:
@@ -53,13 +67,66 @@ test:
   files:
     - test-rpath.sh  # [linux]
   commands:
+    # Enable printing command execution on Windows
+    - echo ON  # [win]
+    # Test main executable
     - test -f $PREFIX/bin/compute-sanitizer                                         # [linux]
     - test -f $PREFIX/compute-sanitizer/compute-sanitizer                           # [linux]
     - if not exist %LIBRARY_PREFIX%\compute-sanitizer\compute-sanitizer.exe exit 1  # [win]
     - if not exist %PREFIX%\Scripts\compute-sanitizer.bat exit 1                    # [win]
+    
+    # Test header files and include directory
+    - test -d $PREFIX/compute-sanitizer/include                                     # [linux]
+    - test -f $PREFIX/compute-sanitizer/include/sanitizer.h                         # [linux]
+    - test -f $PREFIX/compute-sanitizer/include/sanitizer_callbacks.h               # [linux]
+    - test -f $PREFIX/compute-sanitizer/include/sanitizer_memory.h                  # [linux]
+    - test -f $PREFIX/compute-sanitizer/include/sanitizer_result.h                  # [linux]
+    - test -f $PREFIX/compute-sanitizer/include/sanitizer_stream.h                  # [linux]
+    - test -f $PREFIX/compute-sanitizer/include/sanitizer_driver_cbid.h             # [linux]
+    - test -f $PREFIX/compute-sanitizer/include/sanitizer_runtime_cbid.h            # [linux]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\include exit 1                            # [win]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\include\sanitizer.h exit 1                # [win]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\include\sanitizer_callbacks.h exit 1      # [win]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\include\sanitizer_memory.h exit 1         # [win]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\include\sanitizer_result.h exit 1         # [win]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\include\sanitizer_stream.h exit 1         # [win]
+    
+    # Test core libraries
+    - test -f $PREFIX/compute-sanitizer/libsanitizer-public.so                      # [linux]
+    - test -f $PREFIX/compute-sanitizer/libsanitizer-collection.so                  # [linux]
+    - test -f $PREFIX/compute-sanitizer/libInterceptorInjectionTarget.so            # [linux]
+    - test -f $PREFIX/compute-sanitizer/libTreeLauncherPlaceholder.so               # [linux]
+    - test -f $PREFIX/compute-sanitizer/libTreeLauncherTargetInjection.so           # [linux]
+    - test -f $PREFIX/compute-sanitizer/libTreeLauncherTargetUpdatePreloadInjection.so  # [linux]
+    
+    # Test TreeLauncher executables
+    - test -f $PREFIX/compute-sanitizer/TreeLauncherSubreaper                       # [linux]
+    - test -f $PREFIX/compute-sanitizer/TreeLauncherTargetLdPreloadHelper           # [linux]
+    
+    # Test symlinks in lib directory
+    - test -L $PREFIX/lib/libsanitizer-public.so                                    # [linux]
+    - test -L $PREFIX/lib/libsanitizer-collection.so                                # [linux]
+    - test -L $PREFIX/lib/libInterceptorInjectionTarget.so                          # [linux]
+    
+    # Note: NVIDIA distribution doesn't include targets/ directories
+    # All libraries are in compute-sanitizer/ directory only
+    
+    # Test Windows DLLs and libraries
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\sanitizer-public.dll exit 1   # [win]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\sanitizer-collection.dll exit 1  # [win]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\InterceptorInjectionTarget.dll exit 1  # [win]
+    
+    # Test documentation
+    - test -d $PREFIX/compute-sanitizer/docs                                        # [linux]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\docs exit 1                   # [win]
+    
+    # Test rpath configuration
     - bash test-rpath.sh                                                            # [linux]
+    
+    # Test basic functionality
     - {{ exists }} compute-sanitizer
     - compute-sanitizer --version                                                   # [build_platform == target_platform]
+    - compute-sanitizer --help                                                      # [build_platform == target_platform]
 
 about:
   home: https://docs.nvidia.com/compute-sanitizer/SanitizerApiGuide/index.html
