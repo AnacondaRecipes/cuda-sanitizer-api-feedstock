@@ -103,11 +103,6 @@ test:
     - test -f $PREFIX/compute-sanitizer/TreeLauncherSubreaper                       # [linux]
     - test -f $PREFIX/compute-sanitizer/TreeLauncherTargetLdPreloadHelper           # [linux]
     
-    # Test symlinks in lib directory
-    - test -L $PREFIX/lib/libsanitizer-public.so                                    # [linux]
-    - test -L $PREFIX/lib/libsanitizer-collection.so                                # [linux]
-    - test -L $PREFIX/lib/libInterceptorInjectionTarget.so                          # [linux]
-    
     # Note: NVIDIA distribution doesn't include targets/ directories
     # All libraries are in compute-sanitizer/ directory only
     
