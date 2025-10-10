@@ -1,6 +1,7 @@
 {% set name = "cuda-sanitizer-api" %}
-{% set version = "12.4.127" %}
-{% set cuda_version = "12.4" %}
+{% set libname = "libsanitizer" %}
+{% set version = "12.8.93" %}
+{% set cuda_version = "12.8" %}
 {% set platform = "linux-x86_64" %}  # [linux64]
 {% set platform = "linux-ppc64le" %}  # [ppc64le]
 {% set platform = "linux-sbsa" %}  # [aarch64]
@@ -16,26 +17,43 @@ package:
 
 source:
   url: https://developer.download.nvidia.com/compute/cuda/redist/cuda_sanitizer_api/{{ platform }}/cuda_sanitizer_api-{{ platform }}-{{ version }}-archive.{{ extension }}
-  sha256: b719c6b2a8cd330ab0e4361e41dda5493946fb7fa0c4b04c8dbd776fadc3b11b  # [linux64]
-  sha256: 5ceae6170471d7a9e4540796760642747d10d7d4f609dacede90f84927e59618  # [ppc64le]
-  sha256: 0e5ff35535ecb1ed0b482a2ac5e3a20e94722736f023fc802cbfd4900e590746  # [aarch64]
-  sha256: f15613b7c3088299659356456abfe2c3a98eed7eea9d8292fe0ec46726f5ec73  # [win]
+  sha256: ae3574f052c0e06c95305962668eb1fe6ab571dfbb58b305fdb14d523bb1b240  # [linux64]
+  sha256: f57d37f62d3a340efde454d596c97bfa37f342a8ab92ce431935a02a6f34a1e8  # [aarch64]
+  sha256: 0b0dd24ebdf0ab1c6508df609723629e24821e882267823a6fa5753791fd9230  # [win]
 
 build:
   number: 1
   binary_relocation: false
-  skip: true  # [osx or (linux and s390x)]
+  skip: true  # [osx or ppc64le]
   missing_dso_whitelist:
     - '$RPATH/libInterceptorInjectionTarget.so'  # [linux]
     - '$RPATH/InterceptorInjectionTarget.dll'    # [win]
+  # Repacked binaries on linux aarch64 have flag DT_TLSDESC (GNU_HASH),
+  # which is not supported by LIEF and can raise ValueError during
+  # overlinking checks. Use specific patterns from files section.
+  overlinking_ignore_patterns:  # [linux and aarch64]
+    - "targets/sbsa-linux/lib/{{ libname }}*.so*"  # [linux and aarch64]
+    - "targets/sbsa-linux/compute-sanitizer/libInterceptor*"  # [linux and aarch64]
+    - "targets/sbsa-linux/compute-sanitizer/libTreeLauncher*"  # [linux and aarch64]
+    - "targets/sbsa-linux/compute-sanitizer/TreeLauncher*"  # [linux and aarch64]
+    - "targets/sbsa-linux/compute-sanitizer/compute-sanitizer"  # [linux and aarch64]
+    - "targets/sbsa-linux/compute-sanitizer/stubs/{{ libname }}*.so*"  # [linux and aarch64]
+    - "targets/sbsa-linux/compute-sanitizer/stubs/libInterceptor*"  # [linux and aarch64]
+    - "targets/sbsa-linux/compute-sanitizer/stubs/libTreeLauncher*"  # [linux and aarch64]
+    - "compute-sanitizer/{{ libname }}*.so*"  # [linux and aarch64]
+    - "compute-sanitizer/libInterceptor*"  # [linux and aarch64]
+    - "compute-sanitizer/libTreeLauncher*"  # [linux and aarch64]
+    - "compute-sanitizer/TreeLauncher*"  # [linux and aarch64]
+    - "compute-sanitizer/compute-sanitizer"  # [linux and aarch64]
 
 requirements:
   build:
     - {{ compiler("c") }}
     - {{ compiler("cxx") }}
-    - sysroot_{{ target_platform }} {{ conda_glibc_ver }}.*    # [linux]
-    #- arm-variant * {{ arm_variant_type }}  # [aarch64]
+    - {{ stdlib("c") }}
+    - arm-variant * {{ arm_variant_type }}  # [aarch64]
     - patchelf <0.18.0                      # [linux]
+    - cf-nvidia-tools 1  # [linux]
   host:
     - cuda-version {{ cuda_version }}
   run:
@@ -44,17 +62,66 @@ requirements:
     - arm-variant * {{ arm_variant_type }}  # [aarch64]
 
 test:
+  requires:
+    - patchelf       # [linux]
+  files:
+    - test-rpath.sh  # [linux]
   commands:
+    # Enable printing command execution on Windows
+    - echo ON  # [win]
+    # Test main executable
     - test -f $PREFIX/bin/compute-sanitizer                                         # [linux]
     - test -f $PREFIX/compute-sanitizer/compute-sanitizer                           # [linux]
     - if not exist %LIBRARY_PREFIX%\compute-sanitizer\compute-sanitizer.exe exit 1  # [win]
     - if not exist %PREFIX%\Scripts\compute-sanitizer.bat exit 1                    # [win]
-    # This test fails on aarch64. Using `strace which compute-sanitizer` confirms the file is found, but
-    # which still writes "no compute-sanitizer" to stderr. Maybe the `which` in our docker container isn't working correctly, because
-    # `compute-sanitizer --version` executes correctly, and there's no system CUDA installation in the container.
-    # renaming compute-sanitizer to 14 characters or less also seems to fix it.
-    - {{ exists }} compute-sanitizer                                                # [not (linux and aarch64)]
+    
+    # Test header files and include directory
+    - test -d $PREFIX/compute-sanitizer/include                                     # [linux]
+    - test -f $PREFIX/compute-sanitizer/include/sanitizer.h                         # [linux]
+    - test -f $PREFIX/compute-sanitizer/include/sanitizer_callbacks.h               # [linux]
+    - test -f $PREFIX/compute-sanitizer/include/sanitizer_memory.h                  # [linux]
+    - test -f $PREFIX/compute-sanitizer/include/sanitizer_result.h                  # [linux]
+    - test -f $PREFIX/compute-sanitizer/include/sanitizer_stream.h                  # [linux]
+    - test -f $PREFIX/compute-sanitizer/include/sanitizer_driver_cbid.h             # [linux]
+    - test -f $PREFIX/compute-sanitizer/include/sanitizer_runtime_cbid.h            # [linux]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\include exit 1                            # [win]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\include\sanitizer.h exit 1                # [win]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\include\sanitizer_callbacks.h exit 1      # [win]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\include\sanitizer_memory.h exit 1         # [win]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\include\sanitizer_result.h exit 1         # [win]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\include\sanitizer_stream.h exit 1         # [win]
+    
+    # Test core libraries
+    - test -f $PREFIX/compute-sanitizer/libsanitizer-public.so                      # [linux]
+    - test -f $PREFIX/compute-sanitizer/libsanitizer-collection.so                  # [linux]
+    - test -f $PREFIX/compute-sanitizer/libInterceptorInjectionTarget.so            # [linux]
+    - test -f $PREFIX/compute-sanitizer/libTreeLauncherPlaceholder.so               # [linux]
+    - test -f $PREFIX/compute-sanitizer/libTreeLauncherTargetInjection.so           # [linux]
+    - test -f $PREFIX/compute-sanitizer/libTreeLauncherTargetUpdatePreloadInjection.so  # [linux]
+    
+    # Test TreeLauncher executables
+    - test -f $PREFIX/compute-sanitizer/TreeLauncherSubreaper                       # [linux]
+    - test -f $PREFIX/compute-sanitizer/TreeLauncherTargetLdPreloadHelper           # [linux]
+    
+    # Note: NVIDIA distribution doesn't include targets/ directories
+    # All libraries are in compute-sanitizer/ directory only
+    
+    # Test Windows DLLs and libraries
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\sanitizer-public.dll exit 1   # [win]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\sanitizer-collection.dll exit 1  # [win]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\InterceptorInjectionTarget.dll exit 1  # [win]
+    
+    # Test documentation
+    - test -d $PREFIX/compute-sanitizer/docs                                        # [linux]
+    - if not exist %LIBRARY_PREFIX%\compute-sanitizer\docs exit 1                   # [win]
+    
+    # Test rpath configuration
+    - bash test-rpath.sh                                                            # [linux]
+    
+    # Test basic functionality
+    - {{ exists }} compute-sanitizer
     - compute-sanitizer --version                                                   # [build_platform == target_platform]
+    - compute-sanitizer --help                                                      # [build_platform == target_platform]
 
 about:
   home: https://docs.nvidia.com/compute-sanitizer/SanitizerApiGuide/index.html
