@@ -25,12 +25,17 @@ source:
   sha256: b1f366312cb52164dfe7b78463ab085b742f052e74b89e9da08561a8ca8b06e9  # [win]
 
 build:
-  number: 1
+  number: 0
   binary_relocation: false
-  skip: true  # [osx or ppc64le]
+  skip: true  # [osx]
   missing_dso_whitelist:
     - '$RPATH/libInterceptorInjectionTarget.so'  # [linux]
     - '$RPATH/InterceptorInjectionTarget.dll'    # [win]
+  overlinking_ignore_patterns:
+    # Workaround for LIEF's 'not a valid TAG' error
+    - '*TreeLauncher*'        # [linux and aarch64]
+    - '*libsanitizer*.so*'    # [linux and aarch64]
+    - '*compute-sanitizer*'   # [linux and aarch64]
 
 requirements:
   build:
@@ -65,11 +70,13 @@ about:
   license_file: LICENSE
   license: LicenseRef-NVIDIA-End-User-License-Agreement
   license_url: https://docs.nvidia.com/cuda/eula/index.html
+  license_family: Other
   summary: Provides a set of APIs to enable third party tools to write GPU sanitizing tools
   description: |
     Provides a set of APIs to enable third-party tools to write GPU sanitizing
     tools, such as memory and race checkers.
   doc_url: https://docs.nvidia.com/compute-sanitizer/SanitizerApiGuide/index.html
+  dev_url: https://docs.nvidia.com/compute-sanitizer/SanitizerApiGuide/index.html
 
 extra:
   recipe-maintainers:
